@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"math/rand"
 	"net/http"
@@ -27,9 +28,11 @@ type jwtCustomClaims struct {
 }
 
 func getJWK() (*keyfunc.JWKs, error) {
+	refreshInterval := time.Hour
+	refreshTimeOut := time.Second * 10
 	options := keyfunc.Options{
-		// RefreshInterval: time.Hour,
-		// RefreshTimeout:  time.Second * 10,
+		RefreshInterval: &refreshInterval,
+		RefreshTimeout:  &refreshTimeOut,
 		RefreshErrorHandler: func(err error) {
 			log.Printf("There was an error with the jwt.Keyfunc\nError: %s", err.Error())
 		},
@@ -53,6 +56,22 @@ func KIDs(j *keyfunc.JWKs) (kids []string) {
 	return kids
 }
 
+func validateToken(token *jwt.Token) (interface{}, error) {
+	jwks, err := getJWK()
+	if err != nil {
+		return nil, err
+	}
+
+	t, err := new(jwtv4.Parser).Parse(token.Raw, jwks.KeyFunc)
+	if err != nil {
+		return nil, err
+	}
+	if !t.Valid {
+		return nil, errors.New("The token is not valid.")
+	}
+	return jwks.KeyFunc(t)
+}
+
 func login(c echo.Context) error {
 
 	username := c.FormValue("username")
@@ -67,6 +86,7 @@ func login(c echo.Context) error {
 		"Jon Snow",
 		true,
 		jwtv4.StandardClaims{
+			Issuer:    "jon",
 			ExpiresAt: time.Now().Add(time.Hour * 72).Unix(),
 		},
 	}
@@ -88,19 +108,6 @@ func login(c echo.Context) error {
 	if err != nil {
 		panic(err)
 	}
-
-	// Parse the JWT.
-	token, err := jwtv4.Parse(signed, jwks.KeyFunc)
-
-	if err != nil {
-		log.Fatalf("Failed to parse the JWT.\nError: %s", err.Error())
-	}
-
-	// Check if the token is valid.
-	if !token.Valid {
-		log.Fatalf("The token is not valid.")
-	}
-	log.Println("The token is valid.")
 
 	return c.JSON(http.StatusOK, echo.Map{
 		"token": signed,
@@ -135,22 +142,11 @@ func main() {
 	// Unauthenticated route
 	e.GET("/", accessible)
 
-	jwks, err := getJWK()
-	if err != nil {
-		panic(err)
-	}
-
 	// Configure middleware with the custom claims type
 	r := e.Group("/restricted")
 	{
 		config := middleware.JWTConfig{
-			KeyFunc: func(token *jwt.Token) (interface{}, error) {
-				t, _, err := new(jwtv4.Parser).ParseUnverified(token.Raw, jwtv4.MapClaims{})
-				if err != nil {
-					return nil, err
-				}
-				return jwks.KeyFunc(t)
-			},
+			KeyFunc: validateToken,
 		}
 		r.Use(middleware.JWTWithConfig(config))
 		r.GET("", restricted)
