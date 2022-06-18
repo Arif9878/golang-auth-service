@@ -90,17 +90,17 @@ func login(c echo.Context) error {
 	}
 
 	// Parse the JWT.
-	// token, err := jwtv4.Parse(signed, jwks.Keyfunc)
+	token, err := jwtv4.Parse(signed, jwks.KeyFunc)
 
-	// if err != nil {
-	// 	log.Fatalf("Failed to parse the JWT.\nError: %s", err.Error())
-	// }
+	if err != nil {
+		log.Fatalf("Failed to parse the JWT.\nError: %s", err.Error())
+	}
 
-	// // Check if the token is valid.
-	// if !token.Valid {
-	// 	log.Fatalf("The token is not valid.")
-	// }
-	// log.Println("The token is valid.")
+	// Check if the token is valid.
+	if !token.Valid {
+		log.Fatalf("The token is not valid.")
+	}
+	log.Println("The token is valid.")
 
 	return c.JSON(http.StatusOK, echo.Map{
 		"token": signed,
